@@ -875,9 +875,13 @@ const COUNTRIES = [
   {n:"Yemen",f:"🇾🇪"},{n:"Zambia",f:"🇿🇲"},{n:"Zimbabwe",f:"🇿🇼"}
 ];
 
-// Populate countries (used by search picker)
-COUNTRIES.sort((a,b)=>a.n.localeCompare(b.n));
-filteredCountries = [...COUNTRIES];
+// ========== INITIALISE — runs after all code is defined ==========
+window.addEventListener('DOMContentLoaded', () => {
+  COUNTRIES.sort((a,b)=>a.n.localeCompare(b.n));
+  filteredCountries = [...COUNTRIES];
+  fetchLiveNews();
+  setInterval(fetchLiveNews, 30 * 60 * 1000);
+});
 
 // ========== COUNTRY NEWS DATA ==========
 // ✏️ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1137,52 +1141,7 @@ const NEWS_SOURCES = [
   { url: 'https://www.positive.news/feed/',        label: 'Positive News'     },
 ];
 
-// Curated fallback stories — always shown instantly, replaced if live feed loads
-const FALLBACK_STORIES = [
-  { title:'Costa Rica Powers Itself 100% on Renewables for a Full Year', link:'https://www.goodnewsnetwork.org', pubDate: new Date().toISOString(), source:'Good News Network', description:'The Central American nation ran entirely on clean energy for 365 consecutive days — a world first inspiring other nations to accelerate their own green transitions.' },
-  { title:'Blue Whale Population Rebounds to Highest Level in 50 Years', link:'https://www.goodnewsnetwork.org', pubDate: new Date().toISOString(), source:'Good News Network', description:'Decades of conservation work are paying off as whale counts reach record highs across the Pacific and Atlantic oceans.' },
-  { title:'Malaria Vaccine Reaches 20 Million Children Across Africa', link:'https://www.positive.news', pubDate: new Date().toISOString(), source:'Positive News', description:'A historic vaccination rollout has protected millions of young lives, with mortality rates dropping significantly across sub-Saharan Africa.' },
-  { title:'World Literacy Rate Hits 91% — A Historic Milestone', link:'https://www.positive.news', pubDate: new Date().toISOString(), source:'Positive News', description:'For the first time in recorded history, adult literacy has crossed 90% globally — a milestone decades in the making.' },
-  { title:'Kenyan Farmers Boost Yields 60% With Solar-Powered Water Systems', link:'https://www.goodnewsnetwork.org', pubDate: new Date().toISOString(), source:'Good News Network', description:'A grassroots solar initiative is transforming food security for thousands of rural families across East Africa.' },
-];
-
-async function fetchLiveNews() {
-  // Show fallback stories immediately so page never looks broken
-  renderStories(FALLBACK_STORIES);
-
-  // Then try to load live news in background
-  const PROXY = url => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&count=8&api_key=`;
-  let allItems = [];
-
-  for (const src of NEWS_SOURCES) {
-    try {
-      const res = await fetch(PROXY(src.url), { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data.status === 'ok' && Array.isArray(data.items) && data.items.length > 0) {
-        data.items.forEach(item => { item.source = src.label; });
-        allItems = allItems.concat(data.items);
-      }
-    } catch(e) { /* keep fallback */ }
-  }
-
-  if (allItems.length === 0) return; // Keep fallback showing
-
-  // Sort newest first, de-duplicate
-  allItems.sort((a,b) => new Date(b.pubDate) - new Date(a.pubDate));
-  const seen = new Set();
-  const unique = allItems.filter(item => {
-    const key = (item.title||'').toLowerCase().slice(0,40);
-    if (seen.has(key)) return false;
-    seen.add(key); return true;
-  });
-
-  if (unique.length >= 3) renderStories(unique);
-}
-
-// Fetch on load, refresh every 30 min
-fetchLiveNews();
-setInterval(fetchLiveNews, 30 * 60 * 1000);
+const TOPIC_MAP = [
   { kw:['animal','wildlife','species','whale','tiger','elephant','bird','reef','forest','tree','plant'], e:'🌿', tag:'Wildlife & Nature' },
   { kw:['climate','solar','renewable','energy','carbon','ocean','environment','green','recycle','sustain'], e:'🌱', tag:'Environment' },
   { kw:['health','cancer','vaccine','medicine','hospital','doctor','cure','therapy','disease','mental'], e:'💊', tag:'Health & Medicine' },
@@ -1225,21 +1184,13 @@ function stripHtml(html) {
 function renderStories(items) {
   const grid = document.getElementById('storiesGrid');
   const label = document.getElementById('trendingLabel');
-
-  if (!items || items.length === 0) {
-    label.textContent = '✦ Today\'s Good News';
-    grid.innerHTML = '<p style="color:rgba(255,255,255,0.4);padding:1rem;">Could not load live news right now. Check back soon!</p>';
-    return;
-  }
-
+  if (!items || items.length === 0) return;
   label.textContent = '↑ Trending Right Now · Live';
-
   const cards = items.slice(0, 5).map((item, i) => {
     const topic = classifyStory((item.title||'') + ' ' + (item.description||''));
     const ago   = item.pubDate ? timeAgo(item.pubDate) : 'Today';
     const excerpt = stripHtml(item.description || '').slice(0, 120).trim();
     const isFirst = i === 0;
-
     return `
       <div class="story-card${isFirst ? ' featured' : ''}" onclick="window.open('${item.link}','_blank')" style="cursor:pointer;" title="Read full story">
         <div class="story-thumb" style="background:${HERO_GRADIENTS[i]};${isFirst ? 'height:240px;' : ''}font-size:${isFirst ? '5rem' : '3.5rem'};">${topic.e}</div>
@@ -1255,16 +1206,49 @@ function renderStories(items) {
         </div>
       </div>`;
   }).join('');
-
   grid.innerHTML = cards;
   document.getElementById('sponsoredSlot').style.display = 'block';
-
-  // Update footer "last refreshed" time
   const lu = document.getElementById('lastUpdated');
   if (lu) lu.textContent = '🔄 News last refreshed: ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + ' · Auto-refreshes every 30 min';
 }
 
-// Fetch on load, refresh every 30 min — defined above
+// Curated fallback stories — shown instantly while live feed loads
+const FALLBACK_STORIES = [
+  { title:'Costa Rica Powers Itself 100% on Renewables for a Full Year', link:'https://www.goodnewsnetwork.org', pubDate: new Date().toISOString(), source:'Good News Network', description:'The Central American nation ran entirely on clean energy for 365 consecutive days — a world first inspiring other nations to accelerate their own green transitions.' },
+  { title:'Blue Whale Population Rebounds to Highest Level in 50 Years', link:'https://www.goodnewsnetwork.org', pubDate: new Date().toISOString(), source:'Good News Network', description:'Decades of conservation work are paying off as whale counts reach record highs across the Pacific and Atlantic oceans.' },
+  { title:'Malaria Vaccine Reaches 20 Million Children Across Africa', link:'https://www.positive.news', pubDate: new Date().toISOString(), source:'Positive News', description:'A historic vaccination rollout has protected millions of young lives, with mortality rates dropping significantly across sub-Saharan Africa.' },
+  { title:'World Literacy Rate Hits 91% — A Historic Milestone', link:'https://www.positive.news', pubDate: new Date().toISOString(), source:'Positive News', description:'For the first time in recorded history, adult literacy has crossed 90% globally — a milestone decades in the making.' },
+  { title:'Kenyan Farmers Boost Yields 60% With Solar-Powered Water Systems', link:'https://www.goodnewsnetwork.org', pubDate: new Date().toISOString(), source:'Good News Network', description:'A grassroots solar initiative is transforming food security for thousands of rural families across East Africa.' },
+];
+
+async function fetchLiveNews() {
+  // Show fallback stories instantly — page never looks broken
+  renderStories(FALLBACK_STORIES);
+
+  // Try to load live news in background
+  const PROXY = url => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&count=8`;
+  let allItems = [];
+  for (const src of NEWS_SOURCES) {
+    try {
+      const res = await fetch(PROXY(src.url), { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.status === 'ok' && Array.isArray(data.items) && data.items.length > 0) {
+        data.items.forEach(item => { item.source = src.label; });
+        allItems = allItems.concat(data.items);
+      }
+    } catch(e) { /* keep fallback */ }
+  }
+  if (allItems.length === 0) return;
+  allItems.sort((a,b) => new Date(b.pubDate) - new Date(a.pubDate));
+  const seen = new Set();
+  const unique = allItems.filter(item => {
+    const key = (item.title||'').toLowerCase().slice(0,40);
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+  if (unique.length >= 3) renderStories(unique);
+}
 
 </script>
 </body>
